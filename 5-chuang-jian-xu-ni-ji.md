@@ -6,9 +6,10 @@
 
 ### 5.1 创建虚拟机概述
 
-kvm提供给用户使用的接口是设备文件`/dev/kvm`。打开该文件获取文件描述符后，通过`ioctl`操作创建虚拟机，具体的操作如下：
+通过第4节可以知道kvm提供给用户使用的接口是设备文件`/dev/kvm`，在第4节中已经描述过用户态通过`/dev/kvm`文件的文件描述符的ioctl操作访问内核功能的流程，所以后续将直接通过ioctl命令对应到内核中的具体功能，这中间的过程将省略。用户态程序打开该文件获取文件描述符后，通过ioctl操作可以创建虚拟机，具体的操作如下：
 
 ```c
+/* 用户态程序 */
 int main(int argc, char *argv[])
 {
 	int sys_fd, vm_fd;
@@ -30,11 +31,11 @@ err_sys_fd:
 }
 ```
 
-通过`KVM_CREATE_VM`命令，内核会创建kvm虚拟机实体对象，并将kvm虚拟机实体对象与一个文件描述符绑定，文件描述符会返回给用户态，用户态程序后续使用该描述符去配置和创建虚拟机内部资源。后文将详细描述`KMV_CREATE_VM`命令在内核中的流程。在分析的过程中逐渐构建内核中虚拟机的一个视图，并通过图例展示。
+如上述代码所示，通过`KVM_CREATE_VM`命令，内核会创建kvm虚拟机对象，并将kvm虚拟机对象与一个文件绑定，并返回一个文件描述符给用户态程序。用户态程序后续可使用该描述符去配置和创建虚拟机内部资源。内核在`KVM_CREATE_VM`命令创建kvm虚拟机对象时会进行部分的初始化操作，后文将详细描述`KMV_CREATE_VM`命令在内核中的流程。在分析内核创建虚拟机的过程中，本文将逐渐构建出一个内核中kvm虚拟机初始化后的视图，并通过图例展示。
 
 ### 5.2 创建虚拟机内核源码分析
 
-`KVM_CREATE_VM`命令在内核中会执行`kvm_dev_ioctl_create_vm`函数，所以后面的分析就是针对`kvm_dev_ioctl_create_vm`函数实现的分析，具体见代码：
+`KVM_CREATE_VM`命令对应于内核中执行`kvm_dev_ioctl_create_vm`函数，所以后面的分析就是针对`kvm_dev_ioctl_create_vm`函数实现的分析，命令对应于函数的具体代码如下所示：
 
 ```c
 // virt/kvm/kvm_main.c
@@ -57,7 +58,15 @@ out:
 }
 ```
 
-在`kvm_dev_ioctl_create_vm`函数中首先调用`kvm_create_vm`函数创建一个kvm对象，`kvm_create_vm`函数完成了虚拟机的创建和初始化，其中包含虚拟机内存管理、虚拟机IO总线和一些架构相关的初始化。调用`kvm_create_vm`函数的代码如下所示：
+进入`kvm_dev_ioctl_create_vm`函数，该函数会调用图5.1中所示的内容，通过图5.1可以看出来：内核会创建kvm虚拟机对象，并将kvm虚拟机对象与一个文件绑定，并返回一个文件描述符给用户态程序。
+
+<figure><img src=".gitbook/assets/kvm_dev_ioctl_create_vm函数调用图.drawio.png" alt=""><figcaption><p>图5.1 kvm_dev_ioctl_create_vm函数调用图</p></figcaption></figure>
+
+图5.1中与虚拟机相关的最重要的函数就是`kvm_create_vm`函数，该函数会创建一个kvm对象：完成了虚拟机的创建和初始化，其中包含虚拟机内存管理、虚拟机IO总线和一些架构相关的初始化。这里创建的虚拟机只初始化了基础设施，比如初始化管理虚拟机物理内存的数据结构，而其中并没有虚拟机内存数据内容。更多的虚拟机设置则需要在后续通过其他命令进行设置，所以这里就需要将内核中的kvm对象与一个文件进行关联，并将该文件在这个进程中的文件描述符返回给用户态程序。用户态程序就可以根据返回的文件描述符进行后续的设置。
+
+#### 5.2.1 kvm\_create\_vm函数
+
+调用`kvm_create_vm`函数的代码如下所示：
 
 ```c
 // virt/kvm/kvm_main.c
@@ -75,9 +84,7 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 }
 ```
 
-#### 5.2.1 kvm\_create\_vm函数
-
-该函数首先分配一个struct kvm结构体，该结构就对应于内核中的虚拟机（后文简称kvm、kvm虚拟机），然后初始化kvm中的部分成员，如与该kvm虚拟机关联的进程地址空间、记录kvm虚拟机中设备的链表和各种锁，做完这些之后将kvm的用户引用计数设置为1，代码如下：
+进入`kvm_create_vm`函数后，该函数首先分配一个`struct kvm`结构体，该结构体就对应于内核中的虚拟机（后文简称kvm、kvm虚拟机）。然后对kvm结构体的部分成员进行初始化，包括与kvm虚拟机关联的进程地址空间、用于记录kvm虚拟机设备的链表以及各种锁，完成这些之后，将kvm的用户引用计数设置为1，代码如下所示：
 
 ```c
 // virt/kvm/kvm_main.c
@@ -112,9 +119,9 @@ static struct kvm *kvm_create_vm(unsigned long type)
 }
 ```
 
-在内核中锁和引用计数的重要性不言而喻，但不是本文的重点，读者记得这些锁和引用计数在该函数进行了初始化即可。这段代码中本文重点关注三个成员：**mm**、**memslots**和**devices**，其中mm和memslots和虚拟机的内存管理相关，devices和虚拟机的设备管理相关，后续通过虚拟机物理内存管理和创建设备的情景会用到这些成员。
+在内核中锁和引用计数的重要性不言而喻，但不是本文的重点，读者记得这些锁和引用计数在该函数进行了初始化即可。这段代码中本文重点关注三个成员：**mm**、**memslots**和**devices**，其中mm和memslots和虚拟机的内存管理相关，devices和虚拟机的设备管理相关，后续在**虚拟机物理内存管理**和**创建设备**的情景中会用到这些成员。
 
-初始化完上述内容后，会初始化和内存管理相关的**memslots**成员，以及和设备管理相关的**buses**成员，代码如下所示：
+初始化完上述内容后，将初始化和内存管理相关的**memslots**成员，以及和设备管理相关的**buses**成员，具体代码如下所示：
 
 ```c
 // virt/kvm/kvm_main.c
@@ -143,7 +150,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
 }
 ```
 
-kvm\_alloc\_memslots函数的代码如下所示：
+在上述代码中，`kvm_alloc_memslots`函数的具体代码如下所示：
 
 ```c
 // virt/kvm/kvm_main.c
