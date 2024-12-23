@@ -176,3 +176,5 @@ static struct kvm_memslots *kvm_alloc_memslots(void)
 
 <figure><img src=".gitbook/assets/内核虚拟机视图1.drawio.png" alt=""><figcaption><p>图5.2 kvm虚拟机视图1</p></figcaption></figure>
 
+> 未完待续\~
+
