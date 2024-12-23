@@ -150,7 +150,9 @@ static struct kvm *kvm_create_vm(unsigned long type)
 }
 ```
 
-在上述代码中，`kvm_alloc_memslots`函数的具体代码如下所示：
+在上述代码中，首先分配了一个`struct kvm_memslots`结构体，并用该结构体初始化了kvm结构体中的memslots成员。在arm64架构下`KVM_ADDRESS_SPACE_NUM`的值为1，所以这里申请了一个`struct kvm_memslots`。然后申请KVM\_NR\_BUSES个struct kvm\_io\_bus结构体，并记录在kvm结构体的buses成员中。
+
+`kvm_alloc_memslots`函数的具体代码如下所示，其中初始化了一些kvm\_memslots结构体中的部分成员，暂时不作分析：
 
 ```c
 // virt/kvm/kvm_main.c
@@ -170,7 +172,7 @@ static struct kvm_memslots *kvm_alloc_memslots(void)
 }
 ```
 
-到目前为止，可以得到如下的kvm虚拟机视图：
+截至目前，我们可以得到以下关于kvm虚拟机的视图，其中详细展示了KVM如何管理虚拟机的物理内存、设备和总线，这些内容将在后续具体场景中加以应用。目前得到的kvm虚拟机视图如图5.2所示。
 
-<figure><img src=".gitbook/assets/内核虚拟机视图1.drawio.png" alt=""><figcaption><p>图5.1 kvm虚拟机视图1</p></figcaption></figure>
+<figure><img src=".gitbook/assets/内核虚拟机视图1.drawio.png" alt=""><figcaption><p>图5.2 kvm虚拟机视图1</p></figcaption></figure>
 
