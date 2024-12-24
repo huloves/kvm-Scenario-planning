@@ -176,5 +176,12 @@ static struct kvm_memslots *kvm_alloc_memslots(void)
 
 <figure><img src=".gitbook/assets/内核虚拟机视图1.drawio.png" alt=""><figcaption><p>图5.2 kvm虚拟机视图1</p></figcaption></figure>
 
-> 未完待续\~
+在`kvm_create_vm`函数中执行完上述内容后，会调用执行如图5.3所示的三个函数。图5.3如下所示。
 
+<figure><img src=".gitbook/assets/kvm_create_vm函数调用图.drawio.png" alt=""><figcaption><p>图5.3 kvm_create_vm函数调用图</p></figcaption></figure>
+
+在图5.3中，首先调用`kvm_arch_inint_vm`函数初始化kvm虚拟机中架构相关的内容，该函数每个架构会有不同的实现。然后调用`hardware_enable_all`函数对每个CPU使能其虚拟化功能，在这一步中还可能会初始化VGIC相关的内容（本节暂不分析）。最后调用`kvm_arch_post_init_vm`函数为执行kvm初始化最后的收尾工作提供一个执行点，在arm64架构中该函数是一个空函数，不做任何处理。接下来详细分析前两个函数的实现。
+
+#### 5.2.2 kvm\_arch\_init\_vm函数
+
+>
