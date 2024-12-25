@@ -184,4 +184,69 @@ static struct kvm_memslots *kvm_alloc_memslots(void)
 
 #### 5.2.2 kvm\_arch\_init\_vm函数
 
+```c
+// arch/arm64/kvm/arm.c
+int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+{
+	int ret;
+
+	ret = kvm_arm_setup_stage2(kvm, type);
+	if (ret)
+		return ret;
+	......
+}
+```
+
+`kvm_arch_init_vm`函数中首先调用`kvm_arm_setup_stage2`函数设置kvm虚拟机的阶段二地址转换，在arm64架构下就是设置`VTCR_EL2`寄存器的值，`kvm_arm_setup_stage2`函数不进行详细分析了，直接给出当前情景下的运行结果。`kvm_arm_setup_stage2`函数中最终会在kvm结构体中记录kvm虚拟机的`VTCR_EL2`的值，该寄存器控制阶段二地址转换时的规则，例如地址位长、几级页表和vmid等。在后续虚拟机内存内存转换相关的情境中在详细分析该寄存器的内容。
+
+执行完`kvm_arm_setup_stage2`函数之后，调用kvm\_init\_stage2\_mmu函数，代码如下所示：
+
+```c
+// arch/arm64/kvm/arm.c
+int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+{
+	int ret;
+
+	......
+
+	ret = kvm_init_stage2_mmu(kvm, &kvm->arch.mmu);
+	if (ret)
+		return ret;
+
+	......
+}
+```
+
+`kvm_init_stage2_mmu`函数中会为kvm虚拟机的阶段二地址映射申请一个页表，并且会记录该页表的物理地址，kvm\_init\_stage2\_mmu函数具体代码不进行分析，代码到这里就没有复杂的逻辑了。
+
+执行完这些之后，`kvm_arch_init_vm`函数中会将kvm结构体映射到hyp模式下，这样在hyp模式下也能访问到kvm结构体的内容。然后会调用`kvm_vgic_early_init`函数初始化VGIC相关的内容，这里不涉及GIC硬件的部分，只是对kvm结构体内的一些数据成员进行初始化，所以不进行详细的分析。最后记录一下kvm虚拟机中VCPU可能的最大数量，`kvm_arch_init_vm`函数就完成了。代码如下所示：
+
+```c
+// arch/arm64/kvm/arm.c
+int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+{
+	......
+
+	ret = create_hyp_mappings(kvm, kvm + 1, PAGE_HYP);
+	if (ret)
+		goto out_free_stage2_pgd;
+
+	kvm_vgic_early_init(kvm);
+
+	/* The maximum number of VCPUs is limited by the host's GIC model */
+	kvm->arch.max_vcpus = kvm_arm_default_max_vcpus();
+
+	return ret;
+out_free_stage2_pgd:
+	kvm_free_stage2_pgd(&kvm->arch.mmu);
+	return ret;
+}
+```
+
+到这里，我们可以得到以下关于kvm虚拟机的视图。相较于之前的视图，新增了架构相关的内容，其中阶段二地址转换所需的页表和设置为这部分的重点，这些内容将在后续具体场景中加以应用。目前得到的kvm虚拟机视图如图5.4所示。
+
+<figure><img src=".gitbook/assets/内核虚拟机视图2.drawio.png" alt=""><figcaption><p>图5.4 kvm虚拟机视图2</p></figcaption></figure>
+
+要说明一点，这些都是对kvm结构体的设置，还没有在实际硬件上加载。这里在内核中创建了一个未运行的虚拟机，其中包含内存插槽、总线、vtcr寄存器、阶段二地址转换页表。
+
 > 未完待续\~
