@@ -282,6 +282,6 @@ static int hardware_enable_all(void)
 
 <figure><img src=".gitbook/assets/kvm虚拟机CPU虚拟化示意图.drawio.png" alt=""><figcaption><p>arm64架构kvm虚拟机CPU虚拟化示意图</p></figcaption></figure>
 
-<figure><img src=".gitbook/assets/kvm虚拟机抽象图.drawio.png" alt=""><figcaption><p>kvm虚拟机抽象示意图</p></figcaption></figure>
+<figure><img src=".gitbook/assets/kvm虚拟机抽象示意图.drawio.png" alt=""><figcaption><p>kvm虚拟机抽象示意图</p></figcaption></figure>
 
 > 未完待续\~
