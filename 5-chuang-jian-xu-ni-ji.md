@@ -38,7 +38,7 @@ err_sys_fd:
 `KVM_CREATE_VM`命令对应于内核中执行`kvm_dev_ioctl_create_vm`函数，所以后面的分析就是针对`kvm_dev_ioctl_create_vm`函数实现的分析，命令对应于函数的具体代码如下所示：
 
 ```c
-// virt/kvm/kvm_main.c
+/* virt/kvm/kvm_main.c */
 static long kvm_dev_ioctl(struct file *filp,
 			  unsigned int ioctl, unsigned long arg)
 {
@@ -69,7 +69,7 @@ out:
 调用`kvm_create_vm`函数的代码如下所示：
 
 ```c
-// virt/kvm/kvm_main.c
+/* virt/kvm/kvm_main.c */
 static int kvm_dev_ioctl_create_vm(unsigned long type)
 {
 	int r;
@@ -87,7 +87,7 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 进入`kvm_create_vm`函数后，该函数首先分配一个`struct kvm`结构体，该结构体就对应于内核中的虚拟机（后文简称kvm、kvm虚拟机）。然后对kvm结构体的部分成员进行初始化，包括与kvm虚拟机关联的进程地址空间、用于记录kvm虚拟机设备的链表以及各种锁，完成这些之后，将kvm的用户引用计数设置为1，代码如下所示：
 
 ```c
-// virt/kvm/kvm_main.c
+/* virt/kvm/kvm_main.c */
 static struct kvm *kvm_create_vm(unsigned long type)
 {
 	struct kvm *kvm = kvm_arch_alloc_vm();
@@ -124,7 +124,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
 初始化完上述内容后，将初始化和内存管理相关的**memslots**成员，以及和设备管理相关的**buses**成员，具体代码如下所示：
 
 ```c
-// virt/kvm/kvm_main.c
+/* virt/kvm/kvm_main.c */
 static struct kvm *kvm_create_vm(unsigned long type)
 {
 	......
@@ -155,7 +155,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
 `kvm_alloc_memslots`函数的具体代码如下所示，其中初始化了一些kvm\_memslots结构体中的部分成员，暂时不作分析：
 
 ```c
-// virt/kvm/kvm_main.c
+/* virt/kvm/kvm_main.c */
 static struct kvm_memslots *kvm_alloc_memslots(void)
 {
 	int i;
@@ -185,7 +185,7 @@ static struct kvm_memslots *kvm_alloc_memslots(void)
 #### 5.2.2 kvm\_arch\_init\_vm函数
 
 ```c
-// arch/arm64/kvm/arm.c
+/* arch/arm64/kvm/arm.c */
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
@@ -202,7 +202,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 执行完`kvm_arm_setup_stage2`函数之后，调用kvm\_init\_stage2\_mmu函数，代码如下所示：
 
 ```c
-// arch/arm64/kvm/arm.c
+/* arch/arm64/kvm/arm.c */
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
@@ -222,7 +222,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 执行完这些之后，`kvm_arch_init_vm`函数中会将kvm结构体映射到hyp模式下，这样在hyp模式下也能访问到kvm结构体的内容。然后会调用`kvm_vgic_early_init`函数初始化VGIC相关的内容，这里不涉及GIC硬件的部分，只是对kvm结构体内的一些数据成员进行初始化，所以不进行详细的分析。最后记录一下kvm虚拟机中VCPU可能的最大数量，`kvm_arch_init_vm`函数就完成了。代码如下所示：
 
 ```c
-// arch/arm64/kvm/arm.c
+/* arch/arm64/kvm/arm.c */
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	......
@@ -243,10 +243,45 @@ out_free_stage2_pgd:
 }
 ```
 
-到这里，我们可以得到以下关于kvm虚拟机的视图。相较于之前的视图，新增了架构相关的内容，其中阶段二地址转换所需的页表和设置为这部分的重点，这些内容将在后续具体场景中加以应用。目前得到的kvm虚拟机视图如图5.4所示。
+由此，我们可以总结出当前关于KVM虚拟机的视图。相比之前的视图，新增了与架构相关的内容，其中尤为重要的是阶段二地址转换所需的页表和相关设置，这些将在后续具体场景中得到应用。目前的KVM虚拟机视图如图5.4所示。
 
 <figure><img src=".gitbook/assets/内核虚拟机视图2.drawio.png" alt=""><figcaption><p>图5.4 kvm虚拟机视图2</p></figcaption></figure>
 
-要说明一点，这些都是对kvm结构体的设置，还没有在实际硬件上加载。这里在内核中创建了一个未运行的虚拟机，其中包含内存插槽、总线、vtcr寄存器、阶段二地址转换页表。
+需要明确的是，这些操作仅仅是对KVM结构体的配置，并未真正加载到实际硬件上。在内核中，这张图仅显示创建了一个尚未运行的虚拟机，其中包括内存槽位、总线、VTCR寄存器以及二阶段地址转换的页表。
+
+`kvm_arch_init_vm`函数的分析到这里就结束了。回顾图5.3可以看到，`kvm_create_vm`函数接下来会调用`hardware_enable_all`函数，接下来分析该函数。
+
+#### 5.2.2 hardware\_enable\_all函数
+
+该函数的代码比较短，这里全部写出来，代码如下所示：
+
+```c
+/* virt/kvm/kvm_main.c */
+static int hardware_enable_all(void)
+{
+	int r = 0;
+
+	raw_spin_lock(&kvm_count_lock);
+
+	kvm_usage_count++;
+	if (kvm_usage_count == 1) {
+		atomic_set(&hardware_enable_failed, 0);
+		on_each_cpu(hardware_enable_nolock, NULL, 1);
+
+		if (atomic_read(&hardware_enable_failed)) {
+			hardware_disable_all_nolock();
+			r = -EBUSY;
+		}
+	}
+
+	raw_spin_unlock(&kvm_count_lock);
+
+	return r;
+}
+```
+
+<figure><img src=".gitbook/assets/kvm虚拟机CPU虚拟化示意图.drawio.png" alt=""><figcaption><p>arm64架构kvm虚拟机CPU虚拟化示意图</p></figcaption></figure>
+
+<figure><img src=".gitbook/assets/kvm虚拟机抽象图.drawio.png" alt=""><figcaption><p>kvm虚拟机抽象示意图</p></figcaption></figure>
 
 > 未完待续\~
