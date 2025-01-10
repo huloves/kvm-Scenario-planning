@@ -251,7 +251,7 @@ out_free_stage2_pgd:
 
 `kvm_arch_init_vm`函数的分析到这里就结束了。回顾图5.3可以看到，`kvm_create_vm`函数接下来会调用`hardware_enable_all`函数，接下来分析该函数。
 
-#### 5.2.2 hardware\_enable\_all函数
+#### 5.2.3 hardware\_enable\_all函数
 
 该函数的代码比较短，这里全部写出来，代码如下所示：
 
@@ -280,8 +280,23 @@ static int hardware_enable_all(void)
 }
 ```
 
-<figure><img src=".gitbook/assets/kvm虚拟机CPU虚拟化示意图.drawio.png" alt=""><figcaption><p>arm64架构kvm虚拟机CPU虚拟化示意图</p></figcaption></figure>
+上面这段代码在运行时，首先是第一次运行kvm，所以`kvm_usage_count`的值增加为1，然后尝试在每个CPU上运行`hardware_enable_nolock`函数。`hardware_enable_nolock`在arm64架构的实现中就是调用`_hardware_enable_nolock`函数。该函数实际上在kvm初始化的时候已经运行过了，回顾图2.4可以看到，其中已经对每个CPU进行了使能虚拟化。该函数内对虚拟机视图的影响是对CPU进行了抽象，有三个Per-CPU变量值得关注：
 
-<figure><img src=".gitbook/assets/kvm虚拟机抽象示意图.drawio.png" alt=""><figcaption><p>kvm虚拟机抽象示意图</p></figcaption></figure>
+```c
+/* arch/arm64/kvm/arm.c */
+DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
+static DEFINE_PER_CPU(unsigned long, kvm_arm_hyp_stack_page);
+static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
+```
 
-> 未完待续\~
+`_hardware_enable_nolock`函数就是对这几个变量进行了初始化。这三个变量是对CPU的虚拟化，虚拟化出CPU的视图如图5.5所示：
+
+<figure><img src=".gitbook/assets/kvm虚拟机CPU虚拟化示意图.drawio.png" alt="" width="321"><figcaption><p>图5.5 arm64架构kvm虚拟机CPU虚拟化示意图</p></figcaption></figure>
+
+### 5.3 创建完成
+
+通过上述流程，内核中的一个虚拟机就创建好了，最后在和文件系统中的一个匿名文件进行关联，并将对应的文件描述符返回到用户态即可。上面给出的kvm虚拟机视图是根据Linux中数据结构具体描述的，这里最后给出执行完成本节创建虚拟机的内容后，内核中的一个kvm虚拟机的抽象视图：
+
+<figure><img src=".gitbook/assets/kvm虚拟机抽象示意图.drawio.png" alt=""><figcaption><p>图5.6 kvm虚拟机抽象示意图</p></figcaption></figure>
+
+图5.6中，虚拟机中还没有配置vCPU、内存和设备，并且只配置了VTCR\_EL2和阶段二页表这些硬件虚拟化支持，在后续的配置中会逐渐构建出一个可运行的kvm虚拟机。
