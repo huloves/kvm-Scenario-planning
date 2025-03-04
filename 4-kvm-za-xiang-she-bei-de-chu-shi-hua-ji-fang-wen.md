@@ -153,11 +153,11 @@ qemu-system-aarch64 \
 
 进入linux虚拟机的shell后，执行ls命令，可看到get\_version可执行文件：
 
-<figure><img src=".gitbook/assets/image.png" alt=""><figcaption><p>图4.1 get_version运行截图1</p></figcaption></figure>
+<figure><img src=".gitbook/assets/image (1).png" alt=""><figcaption><p>图4.1 get_version运行截图1</p></figcaption></figure>
 
 然后运行`get_version`可执行文件：
 
-<figure><img src=".gitbook/assets/image (1).png" alt=""><figcaption><p>图4.2 get_version运行截图2</p></figcaption></figure>
+<figure><img src=".gitbook/assets/image (1) (1).png" alt=""><figcaption><p>图4.2 get_version运行截图2</p></figcaption></figure>
 
 如图4.2所示，获取到kvm的API版本为12，在get\_version程序中会检查获取到的版本号是否等于`KVM_API_VERSION`，该宏定义在linux的头文件里：
 
