@@ -4,7 +4,44 @@
 >
 > 架构：arm64
 
-### 6.1 VGICv2概述
+### 6.1 情景概述
+
+本章的情景实现：使用qemu-system-aarch64启动带有kvm功能的host linux，然后在host linux中使用kvmtool用户态工具启动一个guest linux。读者若想运行该情景，笔者提供了环境。
+
+> qemu-system-aarch64需自行准备，本文中使用的是8.2.0版本。
+
+拉取下述仓库：
+
+```bash
+git clone https://github.com/huloves/kvm-analysis.git
+```
+
+拉取完成后运行下述命令即可，具体命令可查看脚本文件中的linux\_vm函数：
+
+```bash
+cd kvm-analysis
+bash quick_start.sh linux_vm
+```
+
+笔者已经准备好了host linux使用的根文件系统，根文件系统中包含：
+
+* 一个编译好的linux-5.9镜像作为客户机镜像（Image）；
+* kvmtool用户态工具（lkvm）；
+* 供客户机linux使用的根文件系统（rootfs.kvm.cpio）。
+
+启动host linux后，在host linux中运行下述命令，即可运行一个linux虚拟机：
+
+```bash
+./lkvm run -k Image -i rootfs.kvm.cpio -p "rdinit=/linuxrc console=ttyAMA0" -m 320 -c 1 --name guest-18
+```
+
+在这个情境中，所有的代码均可自行编译。读者若想修改host linux代码，直接修改仓库中的linux-5.9目录中的代码即可。若想修改guest linux的代码，可编译完linux-5.9后，根据提供的根文件系统解压、替换镜像、打包生成新根文件系统。若想修改kvmtool代码，建议从下述仓库中拉取，笔者集成了开源代码中没有的libfdt库，并且在Makefile中添加了--static编译选项。kvmtool代码修改完成后同样记得重新生成根文件系统。kvmtool仓库如下：
+
+```bash
+git cloen https://github.com/huloves/kvmtool.git
+```
+
+### 6.2 VGICv2概述
 
 本章分析虚拟中断控制器的配置和使能，中断控制器为VGICv2。在KVM实现的虚拟机管理器中，虚拟中断依赖硬件GIC对虚拟化扩展的支持。一个支持虚拟化扩展的GIC示意图如图6.1所示：
 
@@ -30,7 +67,7 @@ GIC硬件和虚拟机管理器软件共同实现虚拟中断的示意图如图6.
 
 关于GICv2硬件目前先介绍这些内容，其他的硬件相关内容到具体情境中再进行介绍。
 
-### 6.2 VGICv2探测
+### 6.3 VGICv2探测
 
 VGICv2探测工作主要完成系统对GICv2虚拟化扩展访问的初始化、获取一些基本信息以及在kvm模块中注册VGICv2类型设备。VGICv2探测在kvm模块初始化期间进行，整体的流程图如图6.3所示，源码中未画出的函数本文不进行分析：
 
@@ -38,7 +75,7 @@ VGICv2探测工作主要完成系统对GICv2虚拟化扩展访问的初始化、
 
 如图6.3所示，在kvm初始化子系统的时候会进行vgic的初始化。在初始化的流程中，首先获取gic中与虚拟化相关的信息，然后根据获取的信息进行探测，最后注册一个维护中断。在探测的函数中实际就是将虚拟CPU接口的物理地址映射到host虚拟地址空间和hyp虚拟地址空间，然后读取寄存器的内容获取支持的列表寄存器个数，最后注册VGICv2类型的kvm设备。注意这里这是注册设备，并没有创建设备，注册设备做了什么在下文马上就会分析。接下来分析图6.3中各个流程的具体步骤。
 
-#### 6.2.1 gic\_get\_kvm\_info函数
+#### 6.3.1 gic\_get\_kvm\_info函数
 
 gic\_get\_kvm\_info函数的代码如下所示，该函数很简单，就是返回全局变量gic\_kvm\_info：
 
@@ -111,7 +148,7 @@ intc@8000000 {
 
 到这里gic\_kvm\_info的信息就都获得了，后面进行VGICv2探测和注册维护中断处理程序的流程就是根据该结构体中的内容进行的。
 
-#### 6.2.2 vgic\_v2\_probe函数
+#### 6.3.2 vgic\_v2\_probe函数
 
 该函数首先对gic\_kvm\_info变量中的成员进行一些检查，在我们的场景中这些检查都是可以通过的。通过检查后，执行如下代码，将GIC的虚拟接口控制寄存器（virtual interface control register）映射进host和hyp的虚拟地址空间：
 
@@ -223,7 +260,7 @@ static const struct kvm_device_ops *kvm_device_ops_table[KVM_DEV_TYPE_MAX] = {
 
 综上所述，注册VGICv2类型设备就是在`kvm_device_ops_table`的`KVM_DEV_TYPE_ARM_VGIC_V2`索引处保存`kvm_arm_vgic_v2_ops`操作集。
 
-#### 6.2.3 注册维护中断处理函数
+#### 6.3.3 注册维护中断处理函数
 
 最后就是为虚拟CPU接口注册一个维护中断，GICv2手册中关于维护中断的作用写了很多，但是在linux-5.9中为该中断注册的处理函数非常简单，代码如下所示：
 
@@ -249,18 +286,18 @@ static irqreturn_t vgic_maintenance_handler(int irq, void *data)
 | ------------------------------------- | ------------------ |
 | `enum vgic_type type`                 | `GIC_V2`           |
 | `phys_addr_t vcpu_base`               | `0x8040000`        |
-| `void *vcpu_base_va`                  | （空指针或未明确值）         |
-| `void *vcpu_hyp_va`                   | （空指针或未明确值）         |
+| `void *vcpu_base_va`                  | （未初始化，默认空指针）       |
+| `void *vcpu_hyp_va`                   | （未初始化，默认空指针）       |
 | `void *vctrl_base`                    | `0xff8000101b0000` |
 | `void *vctrl_hyp`                     | `0x40fa2000`       |
 | `int nr_lr`                           | `4`                |
 | `unsigned int maint_irq`              | `1`                |
 | `int max_gic_vcpus`                   | `8`                |
 | `bool can_emulate_gicv2`              | `true`             |
-| `bool has_gicv4`                      | `false`            |
-| `bool has_gicv4_1`                    | `false`            |
-| `struct static_key_false gicv3_cpuif` | （未明确值，通常为静态键结构）    |
-| `u32 ich_vtr_el2`                     | （未明确值，通常为 32 位值）   |
+| `bool has_gicv4`                      | （未初始化，默认`false`）   |
+| `bool has_gicv4_1`                    | （未初始化，默认`false`）   |
+| `struct static_key_false gicv3_cpuif` | （未初始化）             |
+| `u32 ich_vtr_el2`                     | （未初始化）             |
 
 **说明**：
 
@@ -269,6 +306,6 @@ static irqreturn_t vgic_maintenance_handler(int irq, void *data)
 * 字段值包括 GIC 类型、虚拟CPU和控制器的物理/虚拟地址、IRQ 数量、最大虚拟CPU数等。
 * 某些字段此时（如指针或未明确的值）为空。
 
-### 6.3 创建VGICv2设备
+### 6.4 创建VGICv2设备
 
 > 未完待续\~
