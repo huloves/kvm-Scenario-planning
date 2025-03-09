@@ -6,7 +6,7 @@
 
 ### 6.1 情景概述
 
-本章的情景实现：使用qemu-system-aarch64启动带有kvm功能的host linux，然后在host linux中使用kvmtool用户态工具启动一个guest linux。读者若想运行该情景，笔者提供了环境。
+本章的情景实现：使用qemu-system-aarch64启动带有kvm功能的host linux，然后在host linux中使用kvmtool用户态工具启动一个guest linux。若想运行该情景，本文提供了环境。
 
 > qemu-system-aarch64需自行准备，本文中使用的是8.2.0版本。
 
@@ -23,7 +23,7 @@ cd kvm-analysis
 bash quick_start.sh linux_vm
 ```
 
-笔者已经准备好了host linux使用的根文件系统，根文件系统中包含：
+已经准备好了host linux使用的根文件系统，根文件系统中包含：
 
 * 一个编译好的linux-5.9镜像作为客户机镜像（Image）；
 * kvmtool用户态工具（lkvm）；
@@ -35,7 +35,7 @@ bash quick_start.sh linux_vm
 ./lkvm run -k Image -i rootfs.kvm.cpio -p "rdinit=/linuxrc console=ttyAMA0" -m 320 -c 1 --name guest-18
 ```
 
-在这个情境中，所有的代码均可自行编译。读者若想修改host linux代码，直接修改仓库中的linux-5.9目录中的代码即可。若想修改guest linux的代码，可编译完linux-5.9后，根据提供的根文件系统解压、替换镜像、打包生成新根文件系统。若想修改kvmtool代码，建议从下述仓库中拉取，笔者集成了开源代码中没有的libfdt库，并且在Makefile中添加了--static编译选项。kvmtool代码修改完成后同样记得重新生成根文件系统。kvmtool仓库如下：
+在这个情境中，所有的代码均可自行编译。若想修改host linux代码，直接修改仓库中的linux-5.9目录中的代码即可。若想修改guest linux的代码，可编译完linux-5.9后，根据提供的根文件系统解压、替换镜像、打包生成新根文件系统。若想修改kvmtool代码，建议从下述仓库中拉取，该仓库集成了开源代码中没有的libfdt库，并且在Makefile中添加了--static编译选项。kvmtool代码修改完成后同样记得重新生成根文件系统。kvmtool仓库如下：
 
 ```bash
 git cloen https://github.com/huloves/kvmtool.git
@@ -59,11 +59,9 @@ GIC硬件和虚拟机管理器软件共同实现虚拟中断的示意图如图6.
 
 通常，在**不开启虚拟化的场景**下，结束一个中断只需要处理器写入中断结束寄存器（GICC\_EOIR）即可，也就是说处理器写入中断结束寄存器后就完了优先级下降和中断停用。但是在**开启了虚拟化的场景**下，会将优先级下降和中断停用的步骤分开：通过写入GICC\_EOIR完成优先级下降，通过写入GICC\_DIR完成中断停用。引用GICv2手册中的内容：这意味着管理程序（Hypervisor）对GICC\_EOIR寄存器的访问会降低CPU接口的运行优先级，但不会停用中断。在写入EOI寄存器后，CPU接口上的运行优先级降低，从而允许后续的中断信号被发送到处理器。这样的配置提高了灵活性。
 
-这个配合中很重要的一个流程是Hyperivor需要先接管中断处理，然后将中断注入给需要的虚拟机。在kvm的场景下，一个物理中断到达后，host linux首先写入GICC\_EOIR寄存器完成优先级下降，然后进行中断注入相关工作，最后写入GICC\_DIR寄存器完成中断停用。
+这个配合中很重要的一个流程是Hyperivor需要先接管中断处理，然后将中断注入给需要的虚拟机。在kvm的场景下，一个物理中断到达处理器后，host linux首先写入GICC\_EOIR寄存器完成优先级下降，若该中断需要进行虚拟化则会进行中断注入相关流程。若该中断需要注入给VCPU，则该中断在内核中会被提前标记上`IRQD_FORWARDED_TO_VCPU`，所以进行中断注入相关工作后host检查到该标记就不会写入GICH\_DIR寄存器，而是将中断停用的工作留给guest进行。guest可以配置为直接写入GICV\_EOIR寄存器就完成中断停用。
 
-> 这两种配置取决于GICC\_CTLR.EOImodeNS位为0还是1。
->
-> 在手册中，对于Hypervior将GICC\_CTLR.EOImodeNS设置为1，GICV\_CTLR.EOImodeNS设置为0的场景，ARM推荐Hypervisor执行优先级下降，虚拟机写入GICV\_EOIR寄存器执行中断停用。但是笔者看代码host linux写入了GICC\_EOIR和GICC\_DIR。在Qemu中经过测试，对于虚拟时钟中断，host linux是否写入GICC\_DIR都可以正常运行虚拟机。
+优先级下降和中断停用是否同时发生是由GICC\_CTLR.EOImodeNS位为0还是1决定的。在手册中，ARM推荐Hypervior将GICC\_CTLR.EOImodeNS设置为1，虚拟机将GICV\_CTLR.EOImodeNS设置为0，ARM推荐Hypervisor执行优先级下降，虚拟机写入GICV\_EOIR寄存器执行中断停用。
 
 关于GICv2硬件目前先介绍这些内容，其他的硬件相关内容到具体情境中再进行介绍。
 
@@ -196,7 +194,7 @@ int vgic_v2_probe(const struct gic_kvm_info *info)
 
 <figure><img src=".gitbook/assets/image.png" alt=""><figcaption><p>图6.5 GICH_VTR寄存器</p></figcaption></figure>
 
-该图选自《IHI0048B\_b\_gic\_architecture\_specification》第5章。从图6.5可以看到该寄存器的第6位表示实际实现的列表寄存器个数减一，所以要获取实际的列表寄存器个数就是读取该字段的值后加一。
+该图选自《IHI0048B\_b\_gic\_architecture\_specification》第5章。从图6.5可以看到该寄存器的低6位表示实际实现的列表寄存器个数减一，所以要获取实际的列表寄存器个数就是读取该字段的值后加一。
 
 > 注：虚拟接口控制寄存器通常使用GICH\_\*表示，虚拟CPU接口寄存器通常使用GICV\_\*表示。
 
@@ -307,5 +305,7 @@ static irqreturn_t vgic_maintenance_handler(int irq, void *data)
 * 某些字段此时（如指针或未明确的值）为空。
 
 ### 6.4 创建VGICv2设备
+
+<figure><img src=".gitbook/assets/create-VGICv2-device.drawio.png" alt=""><figcaption><p>图6.6 创建VGICv2设备流程图</p></figcaption></figure>
 
 > 未完待续\~
